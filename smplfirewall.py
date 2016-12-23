@@ -120,8 +120,11 @@ class SmplFireWall(object):
     
     _netfilter_obj = None
     
-    def __init__(self):
+    def __init__(self, HOOK_TABLE='OUTPUT'):
         """"""
+        self._hook_table = HOOK_TABLE
+        
+        
         self._if_info = get_if_info()
         if self._rule_table == {}:
             self._init_rule_table()
@@ -137,6 +140,8 @@ class SmplFireWall(object):
             except RuntimeError:
                 pass
             
+        
+            
     
     def _init_start_filterqueue(self):
         """"""
@@ -146,12 +151,12 @@ class SmplFireWall(object):
                 continue
             dest = IP('{0}/{1}'.format(i[1][0]['addr'], i[1][0]['netmask']), make_net=True)
         
-            with popen('iptables -I INPUT -d {0} -j NFQUEUE --queue-num 1'.format(dest)) \
+            with popen('iptables -I {0} -d {1} -j NFQUEUE --queue-num 1'.format(self._hook_table, dest)) \
                  as fp:
                 if fp.readlines() == []:
                     pass
                 else:
-                    raise RuntimeError('[!] NetfilterQueue Bind Error!')
+                    raise RuntimeError('[!] NetfilterQueue Bind Error!')           
                 
     
     def _init_rule_table(self):
@@ -163,15 +168,6 @@ class SmplFireWall(object):
         self._rule_table
         self._rule_table['dst'] = {}
         self._rule_table['src'] = {}
-    
-    def __new__(cls, *args, **kwargs):
-        """Build the Singleton"""
-        if cls._instance:
-            pass
-        else:
-            cls._instance = super(SmplFireWall, cls) \
-                .__new__(cls, *args, **kwargs)
-        return cls._instance
     
     def clearing_nfqueue_bind(self):
         pprint('[!] DELETE NFQUEUEBIND')
@@ -191,9 +187,19 @@ class SmplFireWall(object):
         #pprint(dir(ret))
         if self._filt_by_table(ret):
             print('Accept : src: ', ret.fields['src'], 'dst: ', ret.fields['dst'])
+            try:
+                print('sport: ', ret.payload.fields['sport'])
+                print('dport: ', ret.payload.fields['dport'])
+            except:
+                pass
             packet.set_verdict(nfqueue.NF_ACCEPT)
         else:
             print('Reject : src: ', ret.fields['src'], 'dst: ', ret.fields['dst'])#print('Reject : ', ret)
+            try:
+                print('sport: ', ret.payload.fields['sport'])
+                print('dport: ', ret.payload.fields['dport'])
+            except:
+                pass            
             packet.set_verdict(nfqueue.NF_DROP)
     
     def _filt_by_table(self, ret):
@@ -215,12 +221,15 @@ class SmplFireWall(object):
             else:
                 _prot = _bufferpacket.name
                 _prot.lower()
-                if _prot == 'UDP' or _prot == 'TCP':
-                    filter_param['dport'] = _bufferpacket.fields['dport']
-                    filter_param['sport'] = _bufferpacket.fields['sport']
+                if filter_param.has_key('dport'):
+                    pass
                 else:
-                    filter_param['dport'] = -1
-                    filter_param['sport'] = -1                
+                    try:
+                        filter_param['dport'] = _bufferpacket.fields['dport']
+                        filter_param['sport'] = _bufferpacket.fields['sport']
+                    except:
+                        filter_param['dport'] = -1
+                        filter_param['sport'] = -1                
                 protocals.append(_prot)
         
         return self._filterit(filter_param)
@@ -251,10 +260,10 @@ class SmplFireWall(object):
             if rdports == [] and rsports == [] and rprotos == []:
                 result = False
             
-            if filter_param['dport'] in rdports:
+            if str(filter_param['dport']) in rdports:
                 result = False
             
-            if filter_param['sport'] in rsports:
+            if str(filter_param['sport']) in rsports:
                 result = False
             
             for i in filter_param['protocols']:
@@ -274,10 +283,10 @@ class SmplFireWall(object):
             if rdports == [] and rsports == [] and rprotos == []:
                 result = False
             
-            if filter_param['dport'] in rdports:
+            if str(filter_param['dport']) in rdports:
                 result = False
             
-            if filter_param['sport'] in rsports:
+            if str(filter_param['sport']) in rsports:
                 result = False
             
             for i in filter_param['protocols']:
@@ -364,7 +373,8 @@ class SmplFWTest(unittest.case.TestCase):
         
         s = SmplFireWall()
         #s.add_rule(src_or_dst='dst', ip='192.168.110.255')
-        s.add_rule(ip='45.78.6.64')
+        s.add_rule(ip='45.78.6.64', sports='80', dports='80')
+        s.add_rule(ip='192.168.110.1', sports='54915')
         #s.add_rule(ip='*')
         s.sync_start()
         s.clearing_nfqueue_bind()
